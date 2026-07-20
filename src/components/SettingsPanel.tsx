@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, Upload, SlidersHorizontal, RotateCcw, FolderOpen } from 'lucide-react';
+import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, Upload, SlidersHorizontal, FolderOpen } from 'lucide-react';
 import type { ArtRescanProgress } from '../lib/scanner';
 import { getContrastText } from '../lib/color';
 import { Slider } from './Slider';
-import { EQ_BANDS, EQ_PRESETS, EQ_MIN_DB, EQ_MAX_DB, EQ_FLAT, matchPreset, type EQBandKey, type EQState } from '../lib/eqPresets';
+import { EQ_BANDS, EQ_PRESETS, EQ_MIN_DB, EQ_MAX_DB, matchPreset, type EQBandKey, type EQState } from '../lib/eqPresets';
 
 const PRESETS = [
   { name: 'Green', color: '#1DB954' }, { name: 'Purple', color: '#9B59B6' },
@@ -63,6 +63,11 @@ export function SettingsPanel({
   const [hexInput, setHexInput] = useState(accentColor);
   const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Fix (EQ user-friendliness): sliders default collapsed behind presets so
+  // the common case (tap a preset) doesn't force scrolling past 5 sliders;
+  // auto-expands once someone actually has a hand-tuned ("Custom") curve so
+  // it doesn't hide their own settings from them on return visits.
+  const [eqExpanded, setEqExpanded] = useState(() => matchPreset(eq) === null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -205,27 +210,23 @@ export function SettingsPanel({
             Overlaps the end of one track with the start of the next. At 0, tracks still transition without the usual gap — the next song is simply preloaded ahead of time instead of overlapping.
           </p>
 
-          <div className="flex items-center justify-between mb-2">
-            <span className="flex items-center gap-1.5 text-white/70 text-sm"><SlidersHorizontal size={13} /> Equalizer</span>
-            <button onClick={() => onEQPreset(EQ_FLAT)}
-              className="flex items-center gap-1 text-white/30 hover:text-white/60 text-xs transition-colors">
-              <RotateCcw size={11} /> Reset
-            </button>
+          <div className="flex items-center gap-1.5 mb-2 text-white/70 text-sm">
+            <SlidersHorizontal size={13} /> Equalizer
           </div>
 
-          {/* Feature (EQ presets): one-tap curves (Bass Boost, Rock, Vocal
-              Boost, etc.) that set all 5 bands at once. The active pill
-              reflects the current sliders exactly -- matchPreset() returns
-              null (no pill highlighted) the moment the user nudges a slider
-              away from a known preset, i.e. "Custom". */}
-          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+          {/* Fix (EQ presets hidden behind invisible scrollbar): this used
+              to be a single-row horizontal scroller with no scrollbar and no
+              edge fade, so only ~4 of 10 presets were ever visible and
+              nothing hinted more existed. Wrapping into a grid makes every
+              preset visible up front with no hidden state. */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
             {EQ_PRESETS.map((preset) => {
               const active = matchPreset(eq) === preset.name;
               return (
                 <button
                   key={preset.name}
                   onClick={() => onEQPreset(preset.bands)}
-                  className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap"
+                  className="px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap"
                   style={active
                     ? { background: accentColor, borderColor: accentColor, color: getContrastText(accentColor) }
                     : { background: 'transparent', borderColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)' }}
@@ -236,18 +237,38 @@ export function SettingsPanel({
             })}
           </div>
 
-          {EQ_BANDS.map(({ key, label, freq }) => (
-            <div key={key} className="flex items-center gap-3 mb-2">
-              <span className="text-white/50 text-xs w-16 shrink-0 leading-tight">
-                {label}
-                <span className="block text-white/25 text-[10px]">{freq >= 1000 ? `${freq / 1000}kHz` : `${freq}Hz`}</span>
-              </span>
-              <Slider value={eq[key]} min={EQ_MIN_DB} max={EQ_MAX_DB} step={1}
-                onChange={(v) => onEQChange(key, v)}
-                accentColor={accentColor} ariaLabel={label} className="flex-1" />
-              <span className="text-white/40 text-xs w-9 text-right tabular-nums shrink-0">{eq[key] > 0 ? '+' : ''}{eq[key]}</span>
+          {/* Fix (Reset duplicated Flat preset): a separate "Reset" button
+              did exactly what the "Flat" preset pill already does, in two
+              different places. Fine-tune toggle now doubles as the entry
+              point to the sliders; Flat is the one and only way to zero
+              them out. */}
+          <button
+            onClick={() => setEqExpanded((v) => !v)}
+            className="flex items-center gap-1 text-white/40 hover:text-white/70 text-xs transition-colors mb-2"
+          >
+            <SlidersHorizontal size={11} className={eqExpanded ? '' : 'rotate-90'} style={{ transition: 'transform 0.15s' }} />
+            {eqExpanded ? 'Hide fine-tune' : 'Fine-tune each band'}
+          </button>
+
+          {eqExpanded && (
+            <div className="mb-1">
+              <p className="text-white/30 text-xs mb-2 leading-snug">
+                Gain per band in decibels (dB) — higher boosts that range, lower cuts it.
+              </p>
+              {EQ_BANDS.map(({ key, label, freq }) => (
+                <div key={key} className="flex items-center gap-3 mb-2">
+                  <span className="text-white/50 text-xs w-16 shrink-0 leading-tight">
+                    {label}
+                    <span className="block text-white/35 text-[11px]">{freq >= 1000 ? `${freq / 1000}kHz` : `${freq}Hz`}</span>
+                  </span>
+                  <Slider value={eq[key]} min={EQ_MIN_DB} max={EQ_MAX_DB} step={1}
+                    onChange={(v) => onEQChange(key, v)}
+                    accentColor={accentColor} ariaLabel={label} className="flex-1" />
+                  <span className="text-white/40 text-xs w-9 text-right tabular-nums shrink-0">{eq[key] > 0 ? '+' : ''}{eq[key]}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
         <div className="mt-5 pt-4 border-t border-white/10">
