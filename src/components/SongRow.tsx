@@ -118,15 +118,27 @@ function TrackMenu({
       else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
       else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
     };
+    // FIX (menu stuck in place while list scrolls): this menu is positioned
+    // once, as `fixed`, from the 3-dot button's coordinates at open time. It
+    // never re-measures, and scroll events don't bubble to a plain
+    // `document.addEventListener('mousedown', ...)` listener, so scrolling
+    // the (virtualized) song list left the menu floating disconnected from
+    // its row instead of closing. Listen for 'scroll' in the capture phase
+    // (capture sees scroll events fired on any descendant scrollable
+    // container, since they don't bubble) and close the menu as soon as any
+    // scrolling starts.
+    const scrollClose = () => close(false);
     // Deferred so the click that opened the menu doesn't also close it.
     const t = setTimeout(() => document.addEventListener('mousedown', clickOutside), 0);
     document.addEventListener('keydown', keydown, true);
+    document.addEventListener('scroll', scrollClose, true);
     // Autofocus the first menu item so keyboard users land straight in the menu.
     ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     return () => {
       clearTimeout(t);
       document.removeEventListener('mousedown', clickOutside);
       document.removeEventListener('keydown', keydown, true);
+      document.removeEventListener('scroll', scrollClose, true);
     };
   }, [close]);
 

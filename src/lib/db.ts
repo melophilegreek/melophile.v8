@@ -2,6 +2,7 @@ import { openDB as idbOpen, type IDBPDatabase } from 'idb';
 import type { Song, Playlist, Preferences, HistoryEntry } from '../types';
 import { DEFAULT_ACCENT } from '../types';
 import type { FSDirectoryHandle } from './fsAccess';
+import { EQ_FLAT } from './eqPresets';
 
 interface MelophileDB {
   songs: { key: string; value: Song };
@@ -149,7 +150,7 @@ export async function getPreferences(): Promise<Preferences> {
   return {
     accentColor: (color as string | undefined) ?? DEFAULT_ACCENT,
     crossfadeSeconds: (crossfade as number | undefined) ?? 0,
-    eq: (eq as Preferences['eq'] | undefined) ?? { bass: 0, mid: 0, treble: 0 },
+    eq: (eq as Preferences['eq'] | undefined) ?? EQ_FLAT,
     sortBy: (sortBy as Preferences['sortBy'] | undefined) ?? 'title',
     sortDir: (sortDir as Preferences['sortDir'] | undefined) ?? 'asc',
   };

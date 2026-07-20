@@ -3,6 +3,7 @@ import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, 
 import type { ArtRescanProgress } from '../lib/scanner';
 import { getContrastText } from '../lib/color';
 import { Slider } from './Slider';
+import { EQ_BANDS, EQ_PRESETS, EQ_MIN_DB, EQ_MAX_DB, EQ_FLAT, matchPreset, type EQBandKey, type EQState } from '../lib/eqPresets';
 
 const PRESETS = [
   { name: 'Green', color: '#1DB954' }, { name: 'Purple', color: '#9B59B6' },
@@ -36,9 +37,10 @@ interface Props {
   /** Feature (Gapless/Crossfade) */
   crossfadeSeconds: number;
   onCrossfadeChange: (seconds: number) => void;
-  /** Feature (Basic EQ) */
-  eq: { bass: number; mid: number; treble: number };
-  onEQChange: (band: 'bass' | 'mid' | 'treble', db: number) => void;
+  /** Feature (5-band EQ + presets) */
+  eq: EQState;
+  onEQChange: (band: EQBandKey, db: number) => void;
+  onEQPreset: (bands: EQState) => void;
   /** Feature (Library backup/restore) */
   onExportBackup: () => void;
   onImportBackupFile: (file: File) => Promise<{ matchedSongs: number; unmatchedSongs: number; playlistsCreated: number }>;
@@ -55,7 +57,7 @@ interface Props {
 
 export function SettingsPanel({
   accentColor, onAccentChange, onClose, songCount, onDeleteAllSongs, onRescanArt, artRescan,
-  crossfadeSeconds, onCrossfadeChange, eq, onEQChange, onExportBackup, onImportBackupFile,
+  crossfadeSeconds, onCrossfadeChange, eq, onEQChange, onEQPreset, onExportBackup, onImportBackupFile,
   autoRescanSupported, autoRescanEnabled, autoRescanFolderName, onEnableAutoRescan, onDisableAutoRescan,
 }: Props) {
   const [hexInput, setHexInput] = useState(accentColor);
@@ -205,18 +207,45 @@ export function SettingsPanel({
 
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center gap-1.5 text-white/70 text-sm"><SlidersHorizontal size={13} /> Equalizer</span>
-            <button onClick={() => { onEQChange('bass', 0); onEQChange('mid', 0); onEQChange('treble', 0); }}
+            <button onClick={() => onEQPreset(EQ_FLAT)}
               className="flex items-center gap-1 text-white/30 hover:text-white/60 text-xs transition-colors">
               <RotateCcw size={11} /> Reset
             </button>
           </div>
-          {([['bass', 'Bass'], ['mid', 'Mid'], ['treble', 'Treble']] as const).map(([band, label]) => (
-            <div key={band} className="flex items-center gap-3 mb-2">
-              <span className="text-white/50 text-xs w-12 shrink-0">{label}</span>
-              <Slider value={eq[band]} min={-12} max={12} step={1}
-                onChange={(v) => onEQChange(band, v)}
+
+          {/* Feature (EQ presets): one-tap curves (Bass Boost, Rock, Vocal
+              Boost, etc.) that set all 5 bands at once. The active pill
+              reflects the current sliders exactly -- matchPreset() returns
+              null (no pill highlighted) the moment the user nudges a slider
+              away from a known preset, i.e. "Custom". */}
+          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            {EQ_PRESETS.map((preset) => {
+              const active = matchPreset(eq) === preset.name;
+              return (
+                <button
+                  key={preset.name}
+                  onClick={() => onEQPreset(preset.bands)}
+                  className="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap"
+                  style={active
+                    ? { background: accentColor, borderColor: accentColor, color: getContrastText(accentColor) }
+                    : { background: 'transparent', borderColor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)' }}
+                >
+                  {preset.name}
+                </button>
+              );
+            })}
+          </div>
+
+          {EQ_BANDS.map(({ key, label, freq }) => (
+            <div key={key} className="flex items-center gap-3 mb-2">
+              <span className="text-white/50 text-xs w-16 shrink-0 leading-tight">
+                {label}
+                <span className="block text-white/25 text-[10px]">{freq >= 1000 ? `${freq / 1000}kHz` : `${freq}Hz`}</span>
+              </span>
+              <Slider value={eq[key]} min={EQ_MIN_DB} max={EQ_MAX_DB} step={1}
+                onChange={(v) => onEQChange(key, v)}
                 accentColor={accentColor} ariaLabel={label} className="flex-1" />
-              <span className="text-white/40 text-xs w-9 text-right tabular-nums shrink-0">{eq[band] > 0 ? '+' : ''}{eq[band]}</span>
+              <span className="text-white/40 text-xs w-9 text-right tabular-nums shrink-0">{eq[key] > 0 ? '+' : ''}{eq[key]}</span>
             </div>
           ))}
         </div>

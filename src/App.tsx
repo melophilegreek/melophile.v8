@@ -21,6 +21,7 @@ import { LyricsModal } from './components/LyricsModal';
 
 import { usePlayer } from './hooks/usePlayer';
 import { player } from './lib/player';
+import { EQ_FLAT, type EQBandKey, type EQState } from './lib/eqPresets';
 import {
   getAllSongs, getLikedIds, setLiked as dbSetLiked,
   getPinnedIds, setPinned as dbSetPinned,
@@ -411,7 +412,7 @@ export default function App() {
     // singleton created at import time, before preferences have loaded from
     // IndexedDB — seed it here once they're available.
     player.setCrossfadeSeconds(prefs.crossfadeSeconds ?? 0);
-    player.setEQAll(prefs.eq ?? { bass: 0, mid: 0, treble: 0 });
+    player.setEQAll(prefs.eq ?? EQ_FLAT);
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -989,10 +990,14 @@ export default function App() {
     savePreferences({ crossfadeSeconds: seconds });
   }, []);
 
-  // Feature (Basic EQ)
-  const handleEQChange = useCallback((band: 'bass' | 'mid' | 'treble', db: number) => {
+  // Feature (5-band EQ + presets)
+  const handleEQChange = useCallback((band: EQBandKey, db: number) => {
     player.setEQBand(band, db);
     savePreferences({ eq: { ...player.state.eq, [band]: db } });
+  }, []);
+  const handleEQPreset = useCallback((bands: EQState) => {
+    player.setEQAll(bands);
+    savePreferences({ eq: bands });
   }, []);
 
   // Feature (Library backup/restore)
@@ -1023,7 +1028,7 @@ export default function App() {
     setAccentColor(prefs.accentColor);
     setSortBy(prefs.sortBy ?? 'title'); setSortDir(prefs.sortDir ?? 'asc');
     player.setCrossfadeSeconds(prefs.crossfadeSeconds ?? 0);
-    player.setEQAll(prefs.eq ?? { bass: 0, mid: 0, treble: 0 });
+    player.setEQAll(prefs.eq ?? EQ_FLAT);
     setSongs(allSongs);
     return result;
   }, []);
@@ -1541,6 +1546,7 @@ export default function App() {
           onCrossfadeChange={handleCrossfadeChange}
           eq={playerState.eq}
           onEQChange={handleEQChange}
+          onEQPreset={handleEQPreset}
           onExportBackup={handleExportBackup}
           onImportBackupFile={handleImportBackupFile}
           autoRescanSupported={supportsFileSystemAccess}

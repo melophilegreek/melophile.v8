@@ -1,5 +1,6 @@
 import type { RepeatMode, ShuffleMode, Song } from '../types';
 import { getFile } from './db';
+import { EQ_BANDS, EQ_FLAT, clampEQ, type EQBandKey, type EQState } from './eqPresets';
 
 type Listener = () => void;
 
@@ -21,9 +22,9 @@ export interface PlayerState {
    *  gapless-only (no overlap, but the next track's audio blob is still
    *  prefetched ahead of time so there's no IndexedDB-read gap). */
   crossfadeSeconds: number;
-  /** Feature (Basic EQ): three-band gain in dB, applied via a small Web
+  /** Feature (5-band EQ): gain in dB per band, applied via a small Web
    *  Audio filter chain shared by both underlying <audio> elements. */
-  eq: { bass: number; mid: number; treble: number };
+  eq: EQState;
   /** Feature (Sleep timer): epoch ms the timer will fire at, or null if a
    *  countdown timer isn't running. Mutually exclusive with
    *  sleepTimerEndOfTrack (only one sleep-timer mode is active at once). */
@@ -83,9 +84,7 @@ class Player {
   private ctx: AudioContext | null = null;
   private gainA: GainNode | null = null;
   private gainB: GainNode | null = null;
-  private bassFilter: BiquadFilterNode | null = null;
-  private midFilter: BiquadFilterNode | null = null;
-  private trebleFilter: BiquadFilterNode | null = null;
+  private eqFilters: BiquadFilterNode[] = [];
 
   private _objectUrlA: string | null = null;
   private _objectUrlB: string | null = null;
@@ -119,7 +118,7 @@ class Player {
     currentTime: 0, duration: 0, volume: 0.8, muted: false,
     shuffleMode: 'off', repeat: 'off',
     queue: [], currentIndex: -1, objectUrl: null, userQueue: [],
-    crossfadeSeconds: 0, eq: { bass: 0, mid: 0, treble: 0 },
+    crossfadeSeconds: 0, eq: EQ_FLAT,
     sleepTimerEndsAt: null, sleepTimerEndOfTrack: false,
   };
   private _library: Song[] = [];
@@ -161,18 +160,21 @@ class Player {
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new Ctx();
     this.ctx = ctx;
-    const bass = ctx.createBiquadFilter(); bass.type = 'lowshelf'; bass.frequency.value = 150;
-    const mid = ctx.createBiquadFilter(); mid.type = 'peaking'; mid.frequency.value = 1000; mid.Q.value = 0.9;
-    const treble = ctx.createBiquadFilter(); treble.type = 'highshelf'; treble.frequency.value = 6500;
-    bass.gain.value = this._state.eq.bass;
-    mid.gain.value = this._state.eq.mid;
-    treble.gain.value = this._state.eq.treble;
-    bass.connect(mid); mid.connect(treble); treble.connect(ctx.destination);
-    this.bassFilter = bass; this.midFilter = mid; this.trebleFilter = treble;
+    const filters = EQ_BANDS.map((band) => {
+      const f = ctx.createBiquadFilter();
+      f.type = band.type;
+      f.frequency.value = band.freq;
+      if (band.type === 'peaking') f.Q.value = 1.0;
+      f.gain.value = this._state.eq[band.key];
+      return f;
+    });
+    for (let i = 0; i < filters.length - 1; i++) filters[i].connect(filters[i + 1]);
+    filters[filters.length - 1].connect(ctx.destination);
+    this.eqFilters = filters;
 
     const gainA = ctx.createGain(); gainA.gain.value = 0;
     const gainB = ctx.createGain(); gainB.gain.value = 0;
-    gainA.connect(bass); gainB.connect(bass);
+    gainA.connect(filters[0]); gainB.connect(filters[0]);
     this.gainA = gainA; this.gainB = gainB;
 
     // Element volume/muted are deliberately left alone (always 1/false) --
@@ -483,19 +485,23 @@ class Player {
   setVolume(v: number) { this._patch({ volume: v, muted: false }); this._applyVolumeSteadyState(); }
   setMuted(m: boolean) { this._patch({ muted: m }); this._applyVolumeSteadyState(); }
 
-  // ── Feature (Basic EQ) ──────────────────────────────────────────────────
-  setEQBand(band: 'bass' | 'mid' | 'treble', db: number) {
-    const clamped = Math.max(-15, Math.min(15, db));
+  // ── Feature (5-band EQ + presets) ─────────────────────────────────────────
+  setEQBand(band: EQBandKey, db: number) {
+    const clamped = clampEQ(db);
     this._ensureAudioGraph();
-    const filter = band === 'bass' ? this.bassFilter : band === 'mid' ? this.midFilter : this.trebleFilter;
+    const idx = EQ_BANDS.findIndex((b) => b.key === band);
+    const filter = this.eqFilters[idx];
     if (filter) filter.gain.value = clamped;
     this._patch({ eq: { ...this._state.eq, [band]: clamped } });
   }
-  setEQAll(eq: { bass: number; mid: number; treble: number }) {
+  /** Applies a full 5-band curve at once -- used both for restoring saved
+   *  preferences on load and for one-tap presets (Bass Boost, Rock, etc). */
+  setEQAll(eq: EQState) {
     this._ensureAudioGraph();
-    if (this.bassFilter) this.bassFilter.gain.value = eq.bass;
-    if (this.midFilter) this.midFilter.gain.value = eq.mid;
-    if (this.trebleFilter) this.trebleFilter.gain.value = eq.treble;
+    EQ_BANDS.forEach((band, i) => {
+      const clamped = clampEQ(eq[band.key]);
+      if (this.eqFilters[i]) this.eqFilters[i].gain.value = clamped;
+    });
     this._patch({ eq: { ...eq } });
   }
 

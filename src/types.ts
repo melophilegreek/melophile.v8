@@ -49,8 +49,9 @@ export interface Preferences {
    *  is still prefetched ahead of time so there's no IndexedDB-read gap, it
    *  just doesn't overlap in playback). */
   crossfadeSeconds?: number;
-  /** Feature (EQ): three-band gain in dB, roughly -12..+12. */
-  eq?: { bass: number; mid: number; treble: number };
+  /** Feature (5-band EQ): gain in dB per band, roughly -20..+20. See
+   *  lib/eqPresets.ts for the band layout and EQState type. */
+  eq?: import('./lib/eqPresets').EQState;
   /** Feature (Sort options): persisted so re-opening the app keeps your
    *  chosen library ordering. */
   sortBy?: SortKey;
