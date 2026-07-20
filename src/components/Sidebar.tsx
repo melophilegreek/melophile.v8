@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Music, Heart, ListMusic, Plus, Settings, Trash2, TrendingUp, BarChart3, Users, Disc3 } from 'lucide-react';
+import { Music, Heart, ListMusic, Plus, Settings, Trash2, TrendingUp, BarChart3, Users, Disc3, Stethoscope } from 'lucide-react';
 import type { AppView, Playlist } from '../types';
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
   onCreatePlaylist: () => void;
   onDeletePlaylist: (id: string) => void;
   onOpenSettings: () => void;
+  onOpenHealthCheck: () => void;
 }
 
 // Feature (Browse by Artist/Album): AppView's object variants no longer all
@@ -29,7 +30,7 @@ function isViewActive(current: AppView, target: AppView): boolean {
 
 export function Sidebar({
   currentView, onViewChange, playlists, likedCount, queueCount, accentColor,
-  onCreatePlaylist, onDeletePlaylist, onOpenSettings,
+  onCreatePlaylist, onDeletePlaylist, onOpenSettings, onOpenHealthCheck,
 }: Props) {
   const [hoveredPlaylist, setHoveredPlaylist] = useState<string | null>(null);
 
@@ -105,7 +106,11 @@ export function Sidebar({
         })}
       </div>
 
-      <div className="mt-3 pt-3 border-t border-white/10">
+      <div className="mt-3 pt-3 border-t border-white/10 space-y-0.5">
+        <button onClick={onOpenHealthCheck}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
+          <Stethoscope size={16} /> Metadata Health
+        </button>
         <button onClick={onOpenSettings}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors text-sm font-medium">
           <Settings size={16} /> Settings

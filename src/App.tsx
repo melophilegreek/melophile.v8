@@ -18,6 +18,7 @@ import { StatsScreen } from './components/StatsScreen';
 import { AddSongsModal } from './components/AddSongsModal';
 import { ArtistsGrid, AlbumsGrid } from './components/BrowseGrid';
 import { LyricsModal } from './components/LyricsModal';
+import { MetadataHealthScreen } from './components/MetadataHealthScreen';
 
 import { usePlayer } from './hooks/usePlayer';
 import { player } from './lib/player';
@@ -30,6 +31,7 @@ import {
   recordHistoryEntry, incrementPlayCount, getHistory, clearHistory,
   deleteSong as dbDeleteSong,
   clearAllSongs,
+  updateSongsBatch,
   exportLibraryBackup, importLibraryBackup, type LibraryBackup,
   saveAutoRescanHandle, getAutoRescanHandle,
 } from './lib/db';
@@ -39,6 +41,7 @@ import {
   type FSDirectoryHandle,
 } from './lib/fsAccess';
 import { useListeningStats } from './hooks/useListeningStats';
+import { songHasArtist } from './lib/artistParser';
 import type { AppView, HistoryEntry, LibraryRow, Playlist, Song, SortKey } from './types';
 import { DEFAULT_ACCENT, PINNED_HEADER_HEIGHT, ROW_HEIGHT } from './types';
 import { getContrastText } from './lib/color';
@@ -350,6 +353,7 @@ export default function App() {
   }, [importProgress]);
   useEffect(() => () => { if (progressHideTimer.current !== undefined) clearTimeout(progressHideTimer.current); }, []);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHealthCheck, setShowHealthCheck] = useState(false);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [editSong, setEditSong] = useState<Song | null>(null);
   const [editTagsSong, setEditTagsSong] = useState<Song | null>(null);
@@ -470,7 +474,12 @@ export default function App() {
     // filter to just that artist's/album's tracks.
     if (view === 'artists' || view === 'albums') return [];
     if (typeof view === 'object' && view.type === 'artist') {
-      return songs.filter((s) => (s.artist?.trim() || 'Unknown Artist') === view.name);
+      // Feature (Split multi-artist credits): match any song where `view.name`
+      // is one of the individually-credited names in its (possibly
+      // slash-joined) Artist tag, not just an exact whole-field match --
+      // otherwise tapping "Sai Abhyankkar" from the Artists grid would show
+      // nothing for a song credited "Sai Abhyankkar/ Sai Smriti/ Sathyan Ilanko".
+      return songs.filter((s) => songHasArtist(s, view.name));
     }
     if (typeof view === 'object' && view.type === 'album') {
       return songs.filter((s) => s.album?.trim() === view.album && (s.artist?.trim() || 'Unknown Artist') === view.artist);
@@ -972,6 +981,24 @@ export default function App() {
     player.patchCurrentSong(updated);
   }, []);
 
+  // Feature (Metadata health check): applies a batch of per-song partial
+  // patches (bulk-fill year/genre, copy album art across an album, or an
+  // artist-name merge rewriting the Artist field) in one IndexedDB
+  // transaction, then folds the same patches into local `songs` state so the
+  // health check screen's counts update immediately without a reload.
+  const handleBatchPatch = useCallback(async (patches: { id: string; patch: Partial<Song> }[]) => {
+    if (patches.length === 0) return;
+    await updateSongsBatch(patches);
+    const patchById = new Map(patches.map((p) => [p.id, p.patch] as const));
+    setSongs((prev) => prev.map((s) => {
+      const patch = patchById.get(s.id);
+      if (!patch) return s;
+      if ('albumArtData' in patch) { invalidateArt(s.id); artUrlCache.delete(s.id); }
+      return { ...s, ...patch };
+    }));
+    showToast(`Updated ${patches.length} song${patches.length !== 1 ? 's' : ''}`);
+  }, [showToast]);
+
   const handleAccentChange = useCallback(async (color: string) => {
     setAccentColor(color);
     await savePreferences({ accentColor: color });
@@ -1212,6 +1239,7 @@ export default function App() {
               onCreatePlaylist={() => setShowNewPlaylist(true)}
               onDeletePlaylist={requestDeletePlaylist}
               onOpenSettings={() => setShowSettings(true)}
+              onOpenHealthCheck={() => setShowHealthCheck(true)}
             />
           </div>
 
@@ -1679,6 +1707,15 @@ export default function App() {
             />
           </div>
         </div>
+      )}
+      {showHealthCheck && (
+        <MetadataHealthScreen
+          songs={songs}
+          accentColor={accentColor}
+          onClose={() => setShowHealthCheck(false)}
+          onBatchPatch={handleBatchPatch}
+          onEditArt={(song) => setEditSong(song)}
+        />
       )}
       {toast && <Toast message={toast} />}
     </>

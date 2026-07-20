@@ -2,19 +2,29 @@ import { Music, Users, Disc3 } from 'lucide-react';
 import type { Song } from '../types';
 import { getArtUrl, useAlbumArtError } from './SongRow';
 import { initialFor, placeholderBackground } from '../lib/artPlaceholder';
+import { splitArtists } from '../lib/artistParser';
 
 export interface ArtistGroup { name: string; count: number; sample: Song }
 export interface AlbumGroup { album: string; artist: string; count: number; sample: Song }
 
 /** Groups the library into artists, sorted alphabetically (case-insensitive),
- *  each carrying one representative song (used for its art) and a track count. */
+ *  each carrying one representative song (used for its art) and a track count.
+ *
+ *  Feature (Split multi-artist credits): a raw Artist tag like
+ *  "Sai Abhyankkar/ Sai Smriti/ Sathyan Ilanko" (composer + singers lumped
+ *  together, common in Tamil film metadata) is split via splitArtists() so
+ *  each credited person gets their own tile here, rather than the whole
+ *  slash-joined string being treated as one "artist". A song with 3 credited
+ *  names counts toward all 3 tiles' track counts. The raw field itself is
+ *  untouched -- this only affects how the library is grouped for browsing. */
 export function groupByArtist(songs: Song[]): ArtistGroup[] {
   const map = new Map<string, ArtistGroup>();
   for (const s of songs) {
-    const name = s.artist?.trim() || 'Unknown Artist';
-    const existing = map.get(name);
-    if (existing) { existing.count++; if (!existing.sample.albumArtData && s.albumArtData) existing.sample = s; }
-    else map.set(name, { name, count: 1, sample: s });
+    for (const name of splitArtists(s.artist)) {
+      const existing = map.get(name);
+      if (existing) { existing.count++; if (!existing.sample.albumArtData && s.albumArtData) existing.sample = s; }
+      else map.set(name, { name, count: 1, sample: s });
+    }
   }
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }

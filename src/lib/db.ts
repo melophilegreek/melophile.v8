@@ -82,6 +82,24 @@ export async function updateSongTags(id: string, tags: {
   const db = await getDB(); const s = await db.get('songs', id); if (!s) return;
   await db.put('songs', { ...s, ...tags });
 }
+// Feature (Metadata health check): applies a per-song partial patch to many
+// songs in one readwrite transaction -- used by the health check's batch-fix
+// actions (bulk-set year/genre across a selection, and rewriting the Artist
+// field across every song touched by an artist-name merge). Mirrors
+// saveSongsBatch's "one transaction, not one per song" approach. Songs that
+// no longer exist are silently skipped rather than failing the whole batch.
+export async function updateSongsBatch(patches: { id: string; patch: Partial<Song> }[]): Promise<void> {
+  if (patches.length === 0) return;
+  const db = await getDB();
+  const tx = db.transaction('songs', 'readwrite');
+  const store = tx.objectStore('songs');
+  for (const { id, patch } of patches) {
+    const existing = await store.get(id);
+    if (!existing) continue;
+    store.put({ ...existing, ...patch });
+  }
+  await tx.done;
+}
 export async function deleteSong(id: string, fileKey: string): Promise<void> {
   const db = await getDB(); const tx = db.transaction(['songs', 'files'], 'readwrite');
   await Promise.all([tx.objectStore('songs').delete(id), tx.objectStore('files').delete(fileKey), tx.done]);

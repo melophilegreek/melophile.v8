@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
-import { TrendingUp, BarChart3, Clock, Music2, Disc3, Play, Trash2, ChevronRight } from 'lucide-react';
+import { TrendingUp, BarChart3, Clock, Music2, Disc3, Play, Trash2, ChevronRight, Sparkles } from 'lucide-react';
 import type { Song, HistoryEntry } from '../types';
 import type { ListeningSession } from '../hooks/useListeningStats';
 import { getArtUrl, useAlbumArtError } from './SongRow';
 import { initialFor, placeholderBackground } from '../lib/artPlaceholder';
 import { ListeningStats, type AggregatedListeningStats } from './ListeningStats';
 import { TimeListenedDetail } from './TimeListenedDetail';
+import { YearInMusicDetail } from './YearInMusicDetail';
+import { splitArtists } from '../lib/artistParser';
 
 // Small wrapper so useAlbumArtError (a hook) can be used per-row inside a
 // .map() — hooks can't be called directly inside a map callback, but a
@@ -48,6 +50,7 @@ function formatMinutes(mins: number): string {
 
 export function StatsScreen({ songs, history, accentColor, onClearHistory, onPlaySong, listeningStats, sessions }: Props) {
   const [showTimeDetail, setShowTimeDetail] = useState(false);
+  const [showYearInMusic, setShowYearInMusic] = useState(false);
   const stats = useMemo(() => {
     const played = songs.filter((s) => (s.playCount ?? 0) > 0);
     const totalPlays = played.reduce((sum, s) => sum + (s.playCount ?? 0), 0);
@@ -61,13 +64,21 @@ export function StatsScreen({ songs, history, accentColor, onClearHistory, onPla
     // used as a stand-in "artist photo" on the capsule card below — the
     // library only has embedded album art, not artist photos, so this is
     // the closest visual we can offer.
+    // Feature (Split multi-artist credits): counts against each individually
+    // credited name (see lib/artistParser), not the raw slash-joined field,
+    // so a song credited "A/B/C" contributes to A's, B's, and C's totals
+    // rather than being its own separate "A/B/C" bucket.
     const artistCounts = new Map<string, number>();
-    played.forEach((s) => artistCounts.set(s.artist, (artistCounts.get(s.artist) ?? 0) + (s.playCount ?? 0)));
+    played.forEach((s) => {
+      for (const name of splitArtists(s.artist)) {
+        artistCounts.set(name, (artistCounts.get(name) ?? 0) + (s.playCount ?? 0));
+      }
+    });
     let topArtist = '';
     let topArtistCount = 0;
     artistCounts.forEach((count, artist) => { if (count > topArtistCount) { topArtist = artist; topArtistCount = count; } });
     const topArtistSong = topArtist
-      ? played.filter((s) => s.artist === topArtist).sort((a, b) => (b.playCount ?? 0) - (a.playCount ?? 0))[0] ?? null
+      ? played.filter((s) => splitArtists(s.artist).includes(topArtist)).sort((a, b) => (b.playCount ?? 0) - (a.playCount ?? 0))[0] ?? null
       : null;
 
     // Most played album
@@ -101,6 +112,16 @@ export function StatsScreen({ songs, history, accentColor, onClearHistory, onPla
           </button>
         </div>
         <ListeningStats stats={listeningStats} accentColor={accentColor} />
+        <div className="px-4">
+          <button onClick={() => setShowYearInMusic(true)}
+            className="w-full flex items-center justify-between gap-2 rounded-2xl p-4 mb-2 transition-colors hover:bg-white/[0.06]"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <span className="flex items-center gap-2 text-white/70 text-sm font-medium">
+              <Sparkles size={15} style={{ color: accentColor }} /> Year in Music
+            </span>
+            <ChevronRight size={16} className="text-white/30" />
+          </button>
+        </div>
         <div className="flex-1 flex flex-col items-center justify-center text-white/25 gap-2 py-20">
           <BarChart3 size={48} className="mb-2 text-white/15" />
           <p className="font-medium text-white/40">No plays counted yet</p>
@@ -108,6 +129,9 @@ export function StatsScreen({ songs, history, accentColor, onClearHistory, onPla
         </div>
         {showTimeDetail && (
           <TimeListenedDetail sessions={sessions} accentColor={accentColor} onClose={() => setShowTimeDetail(false)} />
+        )}
+        {showYearInMusic && (
+          <YearInMusicDetail songs={songs} sessions={sessions} accentColor={accentColor} onClose={() => setShowYearInMusic(false)} />
         )}
       </div>
     );
@@ -165,6 +189,16 @@ export function StatsScreen({ songs, history, accentColor, onClearHistory, onPla
           <StatCard icon={<Disc3 size={18} />} label="Top Album" value={stats.topAlbum || '—'} sub={stats.topAlbum ? `${stats.topAlbumCount} plays` : undefined} accentColor={accentColor} />
           <StatCard icon={<Clock size={18} />} label="This Year" value={formatMinutes(listeningStats.thisYear)} sub="minutes" accentColor={accentColor} />
         </div>
+
+        {/* ── Year in Music (Feature: Deeper personal stats) ── */}
+        <button onClick={() => setShowYearInMusic(true)}
+          className="w-full flex items-center justify-between gap-2 rounded-2xl p-4 mb-4 transition-colors hover:bg-white/[0.06]"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <span className="flex items-center gap-2 text-white/70 text-sm font-medium">
+            <Sparkles size={15} style={{ color: accentColor }} /> Year in Music
+          </span>
+          <ChevronRight size={16} className="text-white/30" />
+        </button>
       </div>
 
       <ListeningStats stats={listeningStats} accentColor={accentColor} />
@@ -241,6 +275,9 @@ export function StatsScreen({ songs, history, accentColor, onClearHistory, onPla
 
       {showTimeDetail && (
         <TimeListenedDetail sessions={sessions} accentColor={accentColor} onClose={() => setShowTimeDetail(false)} />
+      )}
+      {showYearInMusic && (
+        <YearInMusicDetail songs={songs} sessions={sessions} accentColor={accentColor} onClose={() => setShowYearInMusic(false)} />
       )}
     </div>
   );
