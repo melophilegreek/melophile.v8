@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, Upload, SlidersHorizontal, FolderOpen, Palette } from 'lucide-react';
+import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, Upload, SlidersHorizontal, FolderOpen } from 'lucide-react';
 import type { ArtRescanProgress } from '../lib/scanner';
 import { getContrastText } from '../lib/color';
 import { Slider } from './Slider';
@@ -170,29 +170,15 @@ export function SettingsPanel({
           })}
         </div>
 
-        <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Custom</h3>
         <div className="flex items-center gap-2">
           <input type="text" value={hexInput} onChange={(e) => setHexInput(e.target.value)}
             onBlur={(e) => applyHex(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyHex(hexInput); }}
             placeholder="#2C5FCC"
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-white/25 transition-colors" />
-          {/* "All colors" button: a real <input type="color"> is the browser's
-              own full-spectrum picker (OS color wheel/palette, every hex
-              value) -- there's no way to build that ourselves, so this wraps
-              it in a clearly-labeled, rainbow-ringed button instead of the
-              near-invisible plain swatch it used to be, making it obvious
-              this is where you go for a color that isn't one of the presets
-              above. */}
-          <label
-            className="relative shrink-0 w-11 h-11 rounded-xl overflow-hidden cursor-pointer flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
-            style={{ background: 'conic-gradient(from 0deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)' }}
-            title="All colors">
-            <div className="absolute inset-[3px] rounded-[10px] flex items-center justify-center" style={{ background: 'rgba(28,28,28,0.9)' }}>
-              <Palette size={16} style={{ color: accentColor }} />
-            </div>
+          <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-white/20 cursor-pointer" style={{ background: accentColor }}>
             <input type="color" value={accentColor} onChange={(e) => { onAccentChange(e.target.value); setHexInput(e.target.value); }}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Pick a custom accent color" />
-          </label>
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          </div>
         </div>
 
         <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/5">

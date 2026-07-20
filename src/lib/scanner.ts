@@ -4,7 +4,6 @@ import { saveSongsBatch, getAllSongs, getFile, updateSongArt } from './db';
 import type { WorkerRequest, WorkerResponse } from './import.worker';
 import { extractMeta, type Meta } from './metadataParser';
 import { detectLyricsFormat } from './lrc';
-import { getFsHandle, type FSFileHandle } from './fsAccess';
 
 // `finalizing: true` marks the phase after every file has been parsed, while
 // the last (sub-batch-size) group of songs is still being committed to
@@ -134,7 +133,7 @@ export async function importFiles(
   let added = 0;
   let completed = 0;
   let saved = 0;
-  let pendingBatch: { song: Song; file: File; handle?: FSFileHandle }[] = [];
+  let pendingBatch: { song: Song; file: File }[] = [];
   // Batch writes used to be `await`-ed inline, which meant every 50th file's
   // progress tick blocked on a full IndexedDB transaction of audio blobs
   // committing -- and the *final* partial batch wrote entirely after the
@@ -209,11 +208,7 @@ export async function importFiles(
         lyrics, lyricsFormat,
         importFolder: folderOf(file),
       };
-      // Instant import: only present when `file` came from the directory
-      // picker / FS Access handle path (see fsAccess.ts) -- a plain
-      // <input webkitdirectory> selection never has one, and falls back to
-      // the old copy-the-bytes-into-IndexedDB behavior automatically.
-      pendingBatch.push({ song, file, handle: getFsHandle(file) });
+      pendingBatch.push({ song, file });
       added++;
       // Fire-and-track rather than `await`: the pendingBatch/added
       // bookkeeping above already happened synchronously (no interleaving
