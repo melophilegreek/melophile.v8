@@ -37,7 +37,7 @@ import {
 } from './lib/db';
 import { importFiles, getTitleArtistDuplicateIds, rescanMissingArt, folderOf, type ImportProgress, type ArtRescanProgress } from './lib/scanner';
 import {
-  supportsFileSystemAccess, pickAutoRescanDirectory, checkReadPermission, requestReadPermission, collectFilesFromHandle,
+  supportsFileSystemAccess, pickDirectory, pickAutoRescanDirectory, checkReadPermission, requestReadPermission, collectFilesFromHandle,
   type FSDirectoryHandle,
 } from './lib/fsAccess';
 import { useListeningStats } from './hooks/useListeningStats';
@@ -775,6 +775,29 @@ export default function App() {
   // handlers) have both been removed per request. Individual per-song like
   // buttons (SongRow's `onLike`/`handleLike`) are untouched.
 
+  // Feature (instant import): used instead of the <input webkitdirectory>
+  // flow below on browsers that support the File System Access API. Files
+  // collected this way each carry a live FSFileHandle (see
+  // collectFilesFromHandle), so importFiles/saveSongsBatch can store a
+  // reference back to the file on disk instead of copying its bytes into
+  // IndexedDB -- the multi-gigabyte write that made importing a folder slow
+  // in the first place. Falls through to the plain <input> picker (via the
+  // caller not calling this at all) on browsers without FS Access support.
+  const handleImportViaPicker = async () => {
+    const dirHandle = await pickDirectory();
+    if (!dirHandle) return; // person cancelled the picker
+    setImportProgress({ current: 0, total: 0, fileName: '' });
+    const fileArr = await collectFilesFromHandle(dirHandle);
+    const result = await importFiles(fileArr, setImportProgress);
+    setImportProgress(null);
+    const allSongs = await getAllSongs();
+    setSongs(allSongs);
+    showToast(
+      `Added ${result.added} song${result.added !== 1 ? 's' : ''}` +
+      (result.skipped > 0 ? `, ${result.skipped} file${result.skipped !== 1 ? 's' : ''} could not be imported` : '')
+    );
+  };
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files?.length) return;
@@ -870,6 +893,16 @@ export default function App() {
     const files = e.target.files;
     const fileArr0 = files?.length ? Array.from(files) : [];
     e.target.value = '';
+    if (fileArr0.length > 0) await runRescan(fileArr0);
+  };
+
+  // Instant-import counterpart to handleRescanFolder above -- same
+  // handle-based collection as handleImportViaPicker, feeding into the
+  // existing runRescan dedup logic.
+  const handleRescanViaPicker = async () => {
+    const dirHandle = await pickDirectory();
+    if (!dirHandle) return;
+    const fileArr0 = await collectFilesFromHandle(dirHandle);
     if (fileArr0.length > 0) await runRescan(fileArr0);
   };
 
@@ -1290,7 +1323,16 @@ export default function App() {
                     <div className="p-1">
                       {/* Folder import */}
                       <label className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/80 hover:bg-white/10 text-sm transition-colors cursor-pointer"
-                        onClick={() => setShowImportMenu(false)}>
+                        onClick={(e) => {
+                          setShowImportMenu(false);
+                          // Instant import: on Chromium, skip the (slow,
+                          // copies-every-byte) <input webkitdirectory> flow
+                          // entirely in favor of a real directory handle --
+                          // see handleImportViaPicker. Browsers without FS
+                          // Access support (Firefox/Safari) fall through to
+                          // the label's normal behavior of opening the input.
+                          if (supportsFileSystemAccess) { e.preventDefault(); handleImportViaPicker(); }
+                        }}>
                         <FolderOpen size={15} className="text-white/50 shrink-0" /> Import folder
                         <input type="file" ref={folderInputRef}
                           // @ts-expect-error — webkitdirectory is non-standard but widely supported
@@ -1302,7 +1344,11 @@ export default function App() {
                       <label
                         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/80 text-sm transition-colors ${rescanning ? 'opacity-40 pointer-events-none cursor-not-allowed' : 'hover:bg-white/10 cursor-pointer'}`}
                         aria-disabled={rescanning}
-                        onClick={() => setShowImportMenu(false)}>
+                        onClick={(e) => {
+                          setShowImportMenu(false);
+                          if (rescanning) return;
+                          if (supportsFileSystemAccess) { e.preventDefault(); handleRescanViaPicker(); }
+                        }}>
                         {rescanning ? <Loader2 size={15} className="text-white/50 animate-spin shrink-0" /> : <RefreshCw size={15} className="text-white/50 shrink-0" />}
                         {rescanning ? 'Scanning…' : 'Rescan library'}
                         <input type="file" ref={rescanInputRef} disabled={rescanning}

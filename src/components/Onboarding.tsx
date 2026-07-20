@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Music, FolderOpen, Loader as Loader2 } from 'lucide-react';
 import { importFiles, type ImportProgress } from '../lib/scanner';
+import { supportsFileSystemAccess, pickDirectory, collectFilesFromHandle } from '../lib/fsAccess';
 import { getContrastText } from '../lib/color';
 
 interface Props {
@@ -14,16 +15,35 @@ export function Onboarding({ accentColor, onComplete }: Props) {
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [done, setDone] = useState<{ added: number; skipped: number } | null>(null);
 
+  const runImport = async (fileArr: File[]) => {
+    if (fileArr.length === 0) return;
+    setDone(null);
+    setProgress({ current: 0, total: fileArr.length, fileName: '' });
+    const result = await importFiles(fileArr, setProgress);
+    setProgress(null);
+    setDone(result);
+    if (result.added > 0) setTimeout(() => onComplete(), 1200);
+  };
+
   const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    setDone(null);
-    setProgress({ current: 0, total: files.length, fileName: '' });
-    const result = await importFiles(Array.from(files), setProgress);
-    setProgress(null);
-    setDone(result);
+    const fileArr = Array.from(files);
     e.target.value = '';
-    if (result.added > 0) setTimeout(() => onComplete(), 1200);
+    await runImport(fileArr);
+  };
+
+  // Instant import: on Chromium, "Import folder" uses a real directory
+  // handle instead of the plain <input webkitdirectory> flow (which forces
+  // every song's bytes to be copied into IndexedDB during import) -- see
+  // fsAccess.ts/scanner.ts for how that avoids the copy. Browsers without FS
+  // Access support fall back to clicking the hidden input as before.
+  const handlePickFolder = async () => {
+    if (!supportsFileSystemAccess) { folderInputRef.current?.click(); return; }
+    const dirHandle = await pickDirectory();
+    if (!dirHandle) return;
+    const fileArr = await collectFilesFromHandle(dirHandle);
+    await runImport(fileArr);
   };
 
   return (
@@ -73,7 +93,7 @@ export function Onboarding({ accentColor, onComplete }: Props) {
                 <p className="text-yellow-400 font-medium">No new audio files found</p>
               </div>
             )}
-            <button onClick={() => folderInputRef.current?.click()}
+            <button onClick={handlePickFolder}
               className="w-full flex items-center justify-center gap-2 font-bold py-4 rounded-full transition-all hover:opacity-90 active:scale-[0.98]"
               style={{ background: accentColor, color: getContrastText(accentColor) }}>
               <FolderOpen size={20} /> Import another folder
@@ -81,7 +101,7 @@ export function Onboarding({ accentColor, onComplete }: Props) {
           </div>
         ) : (
           <div className="space-y-3">
-            <button onClick={() => folderInputRef.current?.click()}
+            <button onClick={handlePickFolder}
               className="w-full flex items-center justify-center gap-2 font-bold py-4 rounded-full transition-all hover:opacity-90 active:scale-[0.98]"
               style={{ background: accentColor, color: getContrastText(accentColor) }}>
               <FolderOpen size={20} /> Import music folder

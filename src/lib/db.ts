@@ -1,12 +1,19 @@
 import { openDB as idbOpen, type IDBPDatabase } from 'idb';
 import type { Song, Playlist, Preferences, HistoryEntry } from '../types';
 import { DEFAULT_ACCENT } from '../types';
-import type { FSDirectoryHandle } from './fsAccess';
+import type { FSDirectoryHandle, FSFileHandle } from './fsAccess';
 import { EQ_FLAT } from './eqPresets';
 
 interface MelophileDB {
   songs: { key: string; value: Song };
-  files: { key: string; value: Blob };
+  // Feature (instant import): a song's 'files' entry is now either the
+  // audio Blob itself (the original behavior -- always used for browsers
+  // without File System Access support, e.g. Firefox/Safari, or files
+  // picked via plain <input>) OR a live FSFileHandle that can re-read the
+  // same bytes from disk on demand (Chromium, when the song was imported via
+  // the directory picker). getFile() below is the one place that resolves
+  // either shape back into a Blob for playback.
+  files: { key: string; value: Blob | FSFileHandle };
   'liked-songs': { key: string; value: string };
   'pinned-songs': { key: string; value: string };
   playlists: { key: string; value: Playlist };
@@ -57,15 +64,18 @@ export async function saveSong(song: Song): Promise<void> { const db = await get
 // import of hundreds of files, that per-file transaction overhead (not the
 // actual byte writes) is what made import slow. Batching amortizes that
 // overhead across every song in the batch.
-export async function saveSongsBatch(items: { song: Song; file: File }[]): Promise<void> {
+export async function saveSongsBatch(items: { song: Song; file: File; handle?: FSFileHandle }[]): Promise<void> {
   if (items.length === 0) return;
   const db = await getDB();
   const tx = db.transaction(['songs', 'files'], 'readwrite');
   const songsStore = tx.objectStore('songs');
   const filesStore = tx.objectStore('files');
-  for (const { song, file } of items) {
+  for (const { song, file, handle } of items) {
     songsStore.put(song);
-    filesStore.put(file, song.fileKey);
+    // Instant import: when a handle is available, store that (a small
+    // structured-clonable reference) instead of the file itself -- IndexedDB
+    // never has to serialize the actual audio bytes through this write.
+    filesStore.put(handle ?? file, song.fileKey);
   }
   await tx.done;
 }
@@ -122,7 +132,38 @@ export async function clearAllSongs(): Promise<void> {
   ]);
 }
 export async function saveFile(key: string, blob: Blob): Promise<void> { const db = await getDB(); await db.put('files', blob, key); }
-export async function getFile(key: string): Promise<Blob | undefined> { const db = await getDB(); return db.get('files', key); }
+
+function isFsHandle(v: unknown): v is FSFileHandle {
+  return !!v && typeof v === 'object' && typeof (v as FSFileHandle).getFile === 'function';
+}
+
+/** Resolves a song's stored 'files' entry into a playable Blob, regardless
+ *  of whether it's an actual Blob (files copied in at import time) or an
+ *  FSFileHandle (instant-import songs -- read from disk on demand instead).
+ *  For a handle, permission may have lapsed since import (e.g. the browser
+ *  was restarted), so this re-checks first via queryPermission (never
+ *  prompts) and only falls to requestPermission if needed -- which only
+ *  actually shows UI when called from within a user gesture (e.g. the
+ *  person clicking a song to play it); outside of one it just resolves to
+ *  the same answer queryPermission already gave, silently. */
+export async function getFile(key: string): Promise<Blob | undefined> {
+  const db = await getDB();
+  const raw = await db.get('files', key);
+  if (!raw) return undefined;
+  if (!isFsHandle(raw)) return raw;
+  try {
+    let perm = await raw.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') perm = await raw.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') {
+      console.warn(`getFile: read permission for "${raw.name}" is "${perm}", not "granted" -- can't read it from disk.`);
+      return undefined;
+    }
+    return await raw.getFile();
+  } catch (e) {
+    console.warn(`getFile: failed to read "${raw.name}" from its stored file handle`, e);
+    return undefined;
+  }
+}
 
 // ── Liked Songs ───────────────────────────────────────────────────────────────
 export async function getLikedIds(): Promise<Set<string>> { const db = await getDB(); const keys = await db.getAllKeys('liked-songs'); return new Set(keys as string[]); }

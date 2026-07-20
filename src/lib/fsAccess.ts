@@ -28,6 +28,15 @@ export interface FSFileHandle {
   readonly kind: 'file';
   readonly name: string;
   getFile(): Promise<File>;
+  // Feature (instant import): per-file permission checks, same as
+  // FSDirectoryHandle below -- both file and directory handles are
+  // FileSystemHandle in the real API and share these two methods. Needed
+  // because Melophile now stores individual file handles (see
+  // getFsHandle/importFiles) instead of copying every song's bytes, so a
+  // song's audio has to be re-read from disk at play time, which means
+  // re-checking permission at that point rather than once up front at import.
+  queryPermission(descriptor: { mode: 'read' }): Promise<'granted' | 'denied' | 'prompt'>;
+  requestPermission(descriptor: { mode: 'read' }): Promise<'granted' | 'denied' | 'prompt'>;
 }
 export interface FSDirectoryHandle {
   readonly kind: 'directory';
@@ -38,17 +47,24 @@ export interface FSDirectoryHandle {
 }
 
 /** Opens the native directory picker. Returns null if the person cancels it
- *  (the browser throws an AbortError in that case, which isn't a failure). */
-export async function pickAutoRescanDirectory(): Promise<FSDirectoryHandle | null> {
+ *  (the browser throws an AbortError in that case, which isn't a failure).
+ *  Shared by the manual "Import folder"/"Rescan folder" flows (App.tsx,
+ *  Onboarding.tsx) and Auto Rescan setup below -- it's the same browser
+ *  picker either way, just used for different follow-up purposes. */
+export async function pickDirectory(): Promise<FSDirectoryHandle | null> {
   try {
     const picker = (window as unknown as { showDirectoryPicker: (opts?: { mode?: 'read' }) => Promise<FSDirectoryHandle> }).showDirectoryPicker;
     return await picker({ mode: 'read' });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') return null;
-    console.warn('Auto rescan: directory picker failed', e);
+    console.warn('Directory picker failed', e);
     return null;
   }
 }
+
+/** @deprecated kept as a name-preserving alias so existing Auto Rescan call
+ *  sites don't need to change -- use pickDirectory() directly for new code. */
+export const pickAutoRescanDirectory = pickDirectory;
 
 /** Checks current permission without prompting -- safe to call silently
  *  (e.g. on app load) since it never shows UI. */
@@ -71,6 +87,20 @@ export async function requestReadPermission(handle: FSDirectoryHandle): Promise<
  *  folderOf() and everything downstream in scanner.ts (folder cover art,
  *  .lrc sidecar matching, import-folder scoping for missing-file detection)
  *  keeps working completely unmodified. */
+// Feature (instant import): a hidden, non-enumerable property carrying the
+// live FileSystemFileHandle a File was read from, when it came from the
+// picker/handle path below (as opposed to a plain <input webkitdirectory>
+// selection, which only ever hands over inert File objects with no way to
+// re-open them later). scanner.ts checks for this and, when present, tells
+// the database to store the *handle* instead of copying the file's bytes --
+// the handle can re-read the same bytes from disk on demand at playback
+// time, so import no longer has to pay for a multi-gigabyte copy up front.
+const FS_HANDLE_PROP = '__melophileFsHandle';
+
+export function getFsHandle(file: File): FSFileHandle | undefined {
+  return (file as unknown as Record<string, unknown>)[FS_HANDLE_PROP] as FSFileHandle | undefined;
+}
+
 export async function collectFilesFromHandle(root: FSDirectoryHandle): Promise<File[]> {
   const out: File[] = [];
   async function walk(handle: FSDirectoryHandle, path: string): Promise<void> {
@@ -80,8 +110,10 @@ export async function collectFilesFromHandle(root: FSDirectoryHandle): Promise<F
         await walk(entry as FSDirectoryHandle, entryPath);
       } else {
         try {
-          const file = await (entry as FSFileHandle).getFile();
+          const fileHandle = entry as FSFileHandle;
+          const file = await fileHandle.getFile();
           Object.defineProperty(file, 'webkitRelativePath', { value: entryPath, configurable: true });
+          Object.defineProperty(file, FS_HANDLE_PROP, { value: fileHandle, configurable: true });
           out.push(file);
         } catch (e) {
           console.warn('Auto rescan: could not read file', entryPath, e);
