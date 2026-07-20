@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, Upload, SlidersHorizontal, FolderOpen } from 'lucide-react';
+import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, Upload, SlidersHorizontal, FolderOpen, ChevronDown, Palette } from 'lucide-react';
 import type { ArtRescanProgress } from '../lib/scanner';
 import { getContrastText } from '../lib/color';
 import { Slider } from './Slider';
@@ -68,6 +68,11 @@ export function SettingsPanel({
   // auto-expands once someone actually has a hand-tuned ("Custom") curve so
   // it doesn't hide their own settings from them on return visits.
   const [eqExpanded, setEqExpanded] = useState(() => matchPreset(eq) === null);
+  // Feature (Accent color tucked behind a button): the color presets, hex
+  // input, and preview used to always take up the top of Settings. They're
+  // now collapsed behind a single "Accent Color" button so Settings opens
+  // shorter; tapping it reveals the same picker as before.
+  const [colorExpanded, setColorExpanded] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -134,63 +139,83 @@ export function SettingsPanel({
           </button>
         </div>
 
-        <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Accent Color</h3>
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {PRESETS.map((p) => {
-            const active = accentColor.toLowerCase() === p.color.toLowerCase();
-            return (
-              <button key={p.color} onClick={() => { onAccentChange(p.color); setHexInput(p.color); }}
-                className="relative h-10 rounded-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
-                style={{ background: p.color, boxShadow: active ? `0 0 0 2px white, 0 0 0 4px ${p.color}` : 'none' }} title={p.name}>
-                {active && <Check size={16} strokeWidth={3} style={{ color: getContrastText(p.color) }} />}
-              </button>
-            );
-          })}
-        </div>
+        {/* Feature (Accent color tucked behind a button): all color-related
+            controls (presets, premium presets, hex input, live preview)
+            now live behind this single toggle instead of always taking up
+            space at the top of Settings. */}
+        <button
+          onClick={() => setColorExpanded((v) => !v)}
+          className="w-full flex items-center justify-between gap-2 py-2.5 px-3 rounded-xl border border-white/10 text-sm font-medium transition-colors hover:bg-white/5 mb-4"
+        >
+          <span className="flex items-center gap-2 text-white/70">
+            <Palette size={15} />
+            Accent Color
+            <span className="w-4 h-4 rounded-full border border-white/20 shrink-0" style={{ background: accentColor }} />
+          </span>
+          <ChevronDown size={15} className="text-white/40" style={{ transform: colorExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+        </button>
 
-        <h3 className="flex items-center gap-1.5 text-amber-300/70 text-xs font-semibold uppercase tracking-wider mb-3">
-          <Sparkles size={12} /> Premium
-        </h3>
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {PREMIUM_PRESETS.map((p) => {
-            const active = accentColor.toLowerCase() === p.color.toLowerCase();
-            return (
-              <button key={p.color} onClick={() => { onAccentChange(p.color); setHexInput(p.color); }}
-                className="relative h-10 rounded-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
-                style={{
-                  background: `linear-gradient(135deg, ${p.color}, ${p.color}cc)`,
-                  boxShadow: active
-                    ? `0 0 0 2px white, 0 0 0 4px ${p.color}, 0 0 12px ${p.color}80`
-                    : `0 0 8px ${p.color}40`,
-                }}
-                title={p.name}>
-                {active && <Check size={16} strokeWidth={3} style={{ color: getContrastText(p.color) }} />}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input type="text" value={hexInput} onChange={(e) => setHexInput(e.target.value)}
-            onBlur={(e) => applyHex(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyHex(hexInput); }}
-            placeholder="#2C5FCC"
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-white/25 transition-colors" />
-          <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-white/20 cursor-pointer" style={{ background: accentColor }}>
-            <input type="color" value={accentColor} onChange={(e) => { onAccentChange(e.target.value); setHexInput(e.target.value); }}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-          </div>
-        </div>
-
-        <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/5">
-          <p className="text-white/40 text-xs mb-2">Preview</p>
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-6 rounded-full" style={{ background: accentColor }} />
-            <div className="flex-1 h-1.5 rounded-full bg-white/10">
-              <div className="w-2/3 h-full rounded-full" style={{ background: accentColor }} />
+        {colorExpanded && (
+          <div className="mb-1">
+            <h3 className="text-white/60 text-xs font-semibold uppercase tracking-wider mb-3">Accent Color</h3>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {PRESETS.map((p) => {
+                const active = accentColor.toLowerCase() === p.color.toLowerCase();
+                return (
+                  <button key={p.color} onClick={() => { onAccentChange(p.color); setHexInput(p.color); }}
+                    className="relative h-10 rounded-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+                    style={{ background: p.color, boxShadow: active ? `0 0 0 2px white, 0 0 0 4px ${p.color}` : 'none' }} title={p.name}>
+                    {active && <Check size={16} strokeWidth={3} style={{ color: getContrastText(p.color) }} />}
+                  </button>
+                );
+              })}
             </div>
-            <Heart size={16} fill={accentColor} style={{ color: accentColor }} />
+
+            <h3 className="flex items-center gap-1.5 text-amber-300/70 text-xs font-semibold uppercase tracking-wider mb-3">
+              <Sparkles size={12} /> Premium
+            </h3>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {PREMIUM_PRESETS.map((p) => {
+                const active = accentColor.toLowerCase() === p.color.toLowerCase();
+                return (
+                  <button key={p.color} onClick={() => { onAccentChange(p.color); setHexInput(p.color); }}
+                    className="relative h-10 rounded-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+                    style={{
+                      background: `linear-gradient(135deg, ${p.color}, ${p.color}cc)`,
+                      boxShadow: active
+                        ? `0 0 0 2px white, 0 0 0 4px ${p.color}, 0 0 12px ${p.color}80`
+                        : `0 0 8px ${p.color}40`,
+                    }}
+                    title={p.name}>
+                    {active && <Check size={16} strokeWidth={3} style={{ color: getContrastText(p.color) }} />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input type="text" value={hexInput} onChange={(e) => setHexInput(e.target.value)}
+                onBlur={(e) => applyHex(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyHex(hexInput); }}
+                placeholder="#2C5FCC"
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-white/25 transition-colors" />
+              <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-white/20 cursor-pointer" style={{ background: accentColor }}>
+                <input type="color" value={accentColor} onChange={(e) => { onAccentChange(e.target.value); setHexInput(e.target.value); }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              </div>
+            </div>
+
+            <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/5">
+              <p className="text-white/40 text-xs mb-2">Preview</p>
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-6 rounded-full" style={{ background: accentColor }} />
+                <div className="flex-1 h-1.5 rounded-full bg-white/10">
+                  <div className="w-2/3 h-full rounded-full" style={{ background: accentColor }} />
+                </div>
+                <Heart size={16} fill={accentColor} style={{ color: accentColor }} />
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
         <button onClick={onClose} className="w-full mt-5 py-3 rounded-xl font-semibold transition-all hover:opacity-90 active:scale-[0.98]"
           style={{ background: accentColor, color: getContrastText(accentColor) }}>Done</button>
