@@ -3,6 +3,7 @@ import { X, Check, Heart, Trash2, AlertTriangle, Sparkles, ImagePlus, Download, 
 import type { ArtRescanProgress } from '../lib/scanner';
 import { getContrastText } from '../lib/color';
 import { Slider } from './Slider';
+import { CustomColorPicker } from './CustomColorPicker';
 import { EQ_BANDS, EQ_PRESETS, EQ_MIN_DB, EQ_MAX_DB, matchPreset, type EQBandKey, type EQState } from '../lib/eqPresets';
 
 const PRESETS = [
@@ -193,15 +194,14 @@ export function SettingsPanel({
               })}
             </div>
 
-            <div className="flex items-center gap-2">
+            <CustomColorPicker color={accentColor} onChange={(hex) => { onAccentChange(hex); setHexInput(hex); }} />
+
+            <div className="flex items-center gap-2 mt-3">
               <input type="text" value={hexInput} onChange={(e) => setHexInput(e.target.value)}
                 onBlur={(e) => applyHex(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') applyHex(hexInput); }}
                 placeholder="#2C5FCC"
                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-white/25 transition-colors" />
-              <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-white/20 cursor-pointer" style={{ background: accentColor }}>
-                <input type="color" value={accentColor} onChange={(e) => { onAccentChange(e.target.value); setHexInput(e.target.value); }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-              </div>
+              <div className="w-10 h-10 rounded-xl border border-white/20 shrink-0" style={{ background: accentColor }} />
             </div>
 
             <div className="mt-4 p-3 rounded-xl bg-white/5 border border-white/5">
